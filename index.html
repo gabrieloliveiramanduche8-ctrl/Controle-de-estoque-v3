@@ -40,7 +40,7 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 <button data-tab="movimentos">Entradas e saídas</button>
 <button data-tab="pedidos">Pedidos</button>
 <button data-tab="fardosTab">Fardos</button>
-<button data-tab="backup">Backup</button>
+<button data-tab="relatorios">Relatórios</button><button data-tab="backup">Backup</button>
 </nav>
 <main>
 <section id="dashboard" class="active-section">
@@ -124,19 +124,26 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 <div class="card"><h2>Fardos</h2><p class="muted">Os fardos são controlados individualmente. Saídas por tamanho consomem primeiro os fardos daquele tamanho.</p><div id="listaFardos"></div></div>
 </section>
 
+<section id="relatorios">
+<div class="card"><h2>Relatórios</h2><p class="muted">Resumo atual do estoque e das movimentações.</p><div id="relatorioResumo"></div><div class="actions"><button class="primary" onclick="exportarCSV()">EXPORTAR CSV</button></div></div>
+</section>
+
 <section id="backup">
 <div class="card"><h2>Backup</h2><p>Exporte os dados antes de trocar de aparelho ou fazer alterações importantes.</p><div class="actions"><button class="primary" onclick="exportarBackup()">BAIXAR BACKUP</button><button class="ghost" onclick="document.getElementById('importFile').click()">IMPORTAR BACKUP</button><input id="importFile" type="file" accept="application/json" style="display:none" onchange="importarBackup(event)"></div><p class="muted" style="margin-top:12px">O backup inclui cortes, fardos, pedidos e histórico.</p></div>
 </section>
 </main>
 
 <script>
-const KEY='controle_cortes_fardos_v5';
+const KEY='controle_cortes_fardos_v6';
 const TAMANHOS=[38,40,42,44,46,48];
 let db=JSON.parse(localStorage.getItem(KEY)||'{"cortes":[],"movimentos":[]}');
 if(!Array.isArray(db.cortes))db.cortes=[]; if(!Array.isArray(db.movimentos))db.movimentos=[];
 const hoje=()=>new Date().toISOString().slice(0,10);
 document.getElementById('data').value=hoje();document.getElementById('movData').value=hoje();
-function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll()}
+async function apiGet(){const r=await fetch('/api/db');if(!r.ok)throw Error('API');return r.json()}
+async function apiSave(){const r=await fetch('/api/db',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(db)});if(!r.ok)throw Error('API');}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll();apiSave().catch(()=>{})}
+async function iniciarBanco(){try{const remoto=await apiGet();if(remoto&&Array.isArray(remoto.cortes)&&Array.isArray(remoto.movimentos)){if(remoto.cortes.length||remoto.movimentos.length||!db.cortes.length){db=remoto;localStorage.setItem(KEY,JSON.stringify(db));}else{await apiSave()}}}catch(e){console.warn('Banco indisponível; usando armazenamento local.')}renderAll();calcularMov()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('main section').forEach(x=>x.classList.remove('active-section'));b.classList.add('active');document.getElementById(b.dataset.tab).classList.add('active-section');renderAll()});
 function esc(s){return String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]))}
 function showTab(id){const b=document.querySelector(`nav button[data-tab="${id}"]`);if(b)b.click()}
@@ -189,8 +196,10 @@ function renderPedidos(){const q=(document.getElementById('buscaPedido').value||
 function renderFardos(){let html='';db.cortes.forEach(c=>{c.fardos.forEach(f=>{const usado=(f.original??f.pecas)-consumoFardos(c,f.tamanho).find(x=>x.id===f.id)?.restante;const rem=Math.max(0,Number.isFinite(usado)?(f.original??f.pecas)-usado:(f.pecas||0));const status=rem===0?'VAZIO':rem<(f.original??f.pecas)?'PARCIAL':'CHEIO';html+=`<tr><td>${esc(c.nome)}</td><td>${f.id}</td><td>${f.tamanho}</td><td>${f.original??f.pecas}</td><td>${rem}</td><td><span class="badge ${status==='CHEIO'?'ok':status==='PARCIAL'?'warn':'bad'}">${status}</span></td></tr>`})});document.getElementById('listaFardos').innerHTML=html?`<div style="overflow:auto"><table><thead><tr><th>Corte</th><th>Fardo</th><th>Tamanho</th><th>Original</th><th>Disponível</th><th>Status</th></tr></thead><tbody>${html}</tbody></table></div>`:'<div class="empty">Nenhum fardo cadastrado.</div>'}
 function exportarBackup(){const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='backup-controle-cortes-'+hoje()+'.json';a.click();URL.revokeObjectURL(a.href)}
 function importarBackup(e){const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!Array.isArray(x.cortes)||!Array.isArray(x.movimentos))throw Error();if(confirm('Substituir os dados atuais pelo backup?')){db=x;save();alert('Backup importado com sucesso.')}}catch{alert('Arquivo de backup inválido.')}e.target.value=''};r.readAsText(file)}
-function renderAll(){renderDash();renderEstoque();renderSelect();renderHist();renderPedidos();renderFardos()}
-renderAll();calcularMov();
+function renderRelatorios(){const total=db.cortes.reduce((a,c)=>a+estoqueCorte(c),0),ent=db.movimentos.filter(m=>m.tipo==='entrada').reduce((a,m)=>a+m.qtd,0),sai=db.movimentos.filter(m=>m.tipo==='saida').reduce((a,m)=>a+m.qtd,0);const baixos=TAMANHOS.map(t=>{const q=db.cortes.reduce((a,c)=>a+estoqueGrade(c,t),0);return `<span class="badge ${q>0?'ok':'bad'}" style="margin:2px">${t}: ${q}</span>`}).join('');document.getElementById('relatorioResumo').innerHTML=`<div class="stats"><div class="stat"><span class="muted">ESTOQUE</span><b>${total}</b></div><div class="stat"><span class="muted">ENTRADAS</span><b>${ent}</b></div><div class="stat"><span class="muted">SAÍDAS</span><b>${sai}</b></div><div class="stat"><span class="muted">PEDIDOS</span><b>${new Set(db.cortes.map(c=>c.pedido||'SEM PEDIDO')).size}</b></div></div><div style="margin-top:12px"><b style="font-size:12px">ESTOQUE POR TAMANHO</b><div style="margin-top:6px">${baixos}</div></div>`}
+function exportarCSV(){const rows=[['Data','Corte','Pedido','Tipo','Movimento','Pecas','Grade','Fardos','Pecas por fardo'],...db.movimentos.map(m=>{const c=db.cortes.find(x=>x.id===m.corteId)||{};return[m.data,c.nome||'',m.pedido||c.pedido||'',c.tipoCalca||'',m.tipo,m.qtd,Object.entries(m.grade||{}).map(([t,q])=>`${t}=${q}`).join(' '),m.fardos||'',m.pecasFardo||'']} )];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='relatorio-controle-cortes-'+hoje()+'.csv';a.click();}
+function renderAll(){renderDash();renderEstoque();renderSelect();renderHist();renderPedidos();renderFardos();renderRelatorios()}
+iniciarBanco();
 </script>
 </body>
 </html>
