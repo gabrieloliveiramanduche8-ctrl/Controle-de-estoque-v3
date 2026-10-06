@@ -26,7 +26,11 @@ async function putDb(data) {
   if (!dbReady) { fallback.cortes = data.cortes || []; fallback.movimentos = data.movimentos || []; return; }
   await pool.query('UPDATE app_state SET data=$1, updated_at=NOW() WHERE id=1', [data]);
 }
-function send(res, code, body, type='application/json; charset=utf-8') { res.writeHead(code, {'Content-Type': type, 'Cache-Control':'no-store'}); res.end(typeof body === 'string' ? body : JSON.stringify(body)); }
+function send(res, code, body, type='application/json; charset=utf-8') {
+  res.writeHead(code, {'Content-Type': type, 'Cache-Control':'no-store'});
+  if (Buffer.isBuffer(body)) return res.end(body);
+  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+}
 function readBody(req){return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>10_000_000)reject(Error('payload'));});req.on('end',()=>{try{resolve(JSON.parse(b||'{}'))}catch(e){reject(e)}});req.on('error',reject)})}
 
 const server = http.createServer(async (req,res)=>{
