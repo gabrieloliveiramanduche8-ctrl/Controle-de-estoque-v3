@@ -87,8 +87,9 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 <div class="grid">
 <div><label>CORTE</label><select id="movCorte"></select></div>
 <div><label>TIPO</label><select id="movTipo"><option value="saida">SAÍDA</option><option value="entrada">ENTRADA</option></select></div>
-<div><label>QUANTIDADE DE FARDOS</label><input id="movFardos" type="number" min="0" value="1" oninput="calcularMov()"></div>
-<div><label>PEÇAS POR FARDO</label><input id="movPecasFardo" type="number" min="0" value="50" oninput="calcularMov()"></div>
+<div><label>QUANTIDADE DE PARES</label><input id="movPares" type="number" min="1" value="1" oninput="calcularMov()"></div>
+<div><label>PEÇAS POR FARDO <span class="muted">(EDITÁVEL)</span></label><input id="movPecasFardo" type="number" min="1" value="50" oninput="calcularMov()"></div>
+<div><label>FARDOS NECESSÁRIOS — AUTOMÁTICO</label><input id="movFardos" type="number" min="1" readonly></div>
 <div><label>QUANTIDADE DE PEÇAS — AUTOMÁTICA</label><input id="movQtd" type="number" min="1" readonly></div>
 <div><label>PEDIDO / REFERÊNCIA</label><input id="movRef" placeholder="Opcional"></div>
 <div><label>DATA</label><input id="movData" type="date"></div>
@@ -96,7 +97,7 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 
 <div class="card" style="margin-top:14px;margin-bottom:0;background:#fafafa">
 <h3>GRADE</h3>
-<p class="muted">Informe quantas peças de cada tamanho estão entrando ou saindo. O total é calculado automaticamente.</p>
+<p class="muted">Informe a proporção da grade (ex.: 1, 2, 3, 4, 4, 2). O sistema multiplica cada tamanho pela quantidade de pares e calcula as peças automaticamente.</p>
 <div class="grid3">
 <div><label>38</label><input class="gradeMov" data-tam="38" type="number" min="0" value="0" oninput="calcularGrade()"></div>
 <div><label>40</label><input class="gradeMov" data-tam="40" type="number" min="0" value="0" oninput="calcularGrade()"></div>
@@ -105,7 +106,7 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 <div><label>46</label><input class="gradeMov" data-tam="46" type="number" min="0" value="0" oninput="calcularGrade()"></div>
 <div><label>48</label><input class="gradeMov" data-tam="48" type="number" min="0" value="0" oninput="calcularGrade()"></div>
 </div>
-<div id="gradeResumo" class="muted" style="margin-top:10px">GRADE: 0 PEÇAS • FARDOS: 1 × 50 = 50 PEÇAS</div>
+<div id="gradeResumo" class="muted" style="margin-top:10px">GRADE: 0 • PARES: 1 • TOTAL: 0 PEÇAS • FARDOS: 0</div>
 </div>
 
 <div class="actions"><button class="primary" onclick="registrarMov()">REGISTRAR MOVIMENTAÇÃO</button></div>
@@ -155,10 +156,30 @@ function editarDados(id){const c=db.cortes.find(x=>x.id===id);if(!c)return;const
 function editarFardos(id){const c=db.cortes.find(x=>x.id===id);if(!c)return;const atual=c.fardos.map(f=>`${f.tamanho}=${f.pecas}`).join('\n');const novo=prompt('Um fardo por linha no formato TAMANHO=PEÇAS. Ex.:\n38=50\n38=47\n40=50',atual);if(novo===null)return;const f=novo.split('\n').filter(Boolean).map((x,i)=>{const [t,q]=x.split('=');return{id:i+1,tamanho:(t||'').trim(),pecas:Number(q)||0,original:Number(q)||0}});if(f.some(x=>!TAMANHOS.map(String).includes(x.tamanho)||x.pecas<=0))return alert('Formato inválido.');if(f.reduce((a,x)=>a+x.pecas,0)!==c.total)return alert(`Os fardos precisam somar exatamente ${c.total} peças.`);c.fardos=f;save()}
 function excluirCorte(id){if(confirm('Excluir este corte e todo o histórico?')){db.cortes=db.cortes.filter(c=>c.id!==id);db.movimentos=db.movimentos.filter(m=>m.corteId!==id);save()}}
 function renderSelect(){const s=document.getElementById('movCorte');s.innerHTML=db.cortes.length?db.cortes.map(c=>`<option value="${c.id}">${esc(c.nome)} — ${estoqueCorte(c)} pcs</option>`).join(''):'<option value="">Nenhum corte cadastrado</option>'}
-function calcularMov(){const f=Math.max(0,Number(document.getElementById('movFardos').value)||0),p=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0),total=f*p;document.getElementById('movQtd').value=total||'';calcularGrade()}
-function calcularGrade(){const grade=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0),f=Number(document.getElementById('movFardos').value)||0,p=Number(document.getElementById('movPecasFardo').value)||0,total=f*p;document.getElementById('gradeResumo').textContent=`GRADE: ${grade} PEÇAS • FARDOS: ${f} × ${p} = ${total} PEÇAS`}
-function lerGradeMov(){const g={};document.querySelectorAll('.gradeMov').forEach(x=>{const q=Number(x.value)||0;if(q>0)g[x.dataset.tam]=q});return g}
-function registrarMov(){const corteId=Number(document.getElementById('movCorte').value),tipo=document.getElementById('movTipo').value,fardos=Math.max(0,Number(document.getElementById('movFardos').value)||0),pf=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0),qtd=fardos*pf,grade=lerGradeMov(),gt=Object.values(grade).reduce((a,b)=>a+b,0),c=db.cortes.find(x=>x.id===corteId);if(!c||qtd<=0)return alert('Informe corte, fardos e peças por fardo.');if(gt!==qtd)return alert(`A grade soma ${gt}, mas a movimentação soma ${qtd}. Ajuste a grade.`);if(tipo==='saida'){if(qtd>estoqueCorte(c))return alert(`SAÍDA BLOQUEADA. Estoque total: ${estoqueCorte(c)} peças.`);for(const [t,v] of Object.entries(grade)){const disp=estoqueGrade(c,t);if(v>disp)return alert(`SAÍDA BLOQUEADA: tamanho ${t} tem ${disp} peças disponíveis e você tentou retirar ${v}.`)}}db.movimentos.push({id:Date.now(),corteId,tipo,qtd,fardos,pecasFardo:pf,grade,ref:document.getElementById('movRef').value.trim(),data:document.getElementById('movData').value||hoje()});save();alert(`${tipo==='saida'?'Saída':'Entrada'} registrada: ${qtd} peças.`);document.getElementById('movRef').value='';document.getElementById('movFardos').value=1;document.getElementById('movPecasFardo').value=50;document.querySelectorAll('.gradeMov').forEach(x=>x.value=0);calcularMov()}
+function calcularMov(){const pares=Math.max(0,Number(document.getElementById('movPares').value)||0),pf=Math.max(1,Number(document.getElementById('movPecasFardo').value)||50),gradeBase=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0),total=gradeBase*pares,fardos=total>0?Math.ceil(total/pf):0;document.getElementById('movQtd').value=total||'';document.getElementById('movFardos').value=fardos||'';document.getElementById('gradeResumo').textContent=`GRADE: ${gradeBase} • PARES: ${pares} • TOTAL: ${total} PEÇAS • FARDOS: ${fardos} (até ${pf} peças/fardo)`}
+function calcularGrade(){calcularMov()}
+function lerGradeMov(){const pares=Math.max(0,Number(document.getElementById('movPares').value)||0),g={};document.querySelectorAll('.gradeMov').forEach(x=>{const base=Number(x.value)||0, q=base*pares;if(q>0)g[x.dataset.tam]=q});return g}
+function registrarMov(){
+ const corteId=Number(document.getElementById('movCorte').value),tipo=document.getElementById('movTipo').value;
+ const pares=Math.max(0,Number(document.getElementById('movPares').value)||0);
+ const pf=Math.max(1,Number(document.getElementById('movPecasFardo').value)||50);
+ const baseGrade=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0);
+ const qtd=baseGrade*pares;
+ const fardos=qtd>0?Math.ceil(qtd/pf):0;
+ const grade=lerGradeMov();
+ const gt=Object.values(grade).reduce((a,b)=>a+b,0);
+ const c=db.cortes.find(x=>x.id===corteId);
+ if(!c||qtd<=0||pares<=0)return alert('Informe o corte, a grade e a quantidade de pares.');
+ if(gt!==qtd)return alert(`A grade calculada soma ${gt} peças, mas o total esperado é ${qtd}.`);
+ if(tipo==='saida'){
+  if(qtd>estoqueCorte(c))return alert(`SAÍDA BLOQUEADA. Estoque total: ${estoqueCorte(c)} peças.`);
+  for(const [t,v] of Object.entries(grade)){const disp=estoqueGrade(c,t);if(v>disp)return alert(`SAÍDA BLOQUEADA: tamanho ${t} tem ${disp} peças disponíveis e você tentou retirar ${v}.`)}
+ }
+ const gradeBase={};document.querySelectorAll('.gradeMov').forEach(x=>gradeBase[x.dataset.tam]=Number(x.value)||0);
+ db.movimentos.push({id:Date.now(),corteId,tipo,qtd,fardos,pecasFardo:pf,pares,grade,gradeBase,ref:document.getElementById('movRef').value.trim(),data:document.getElementById('movData').value||hoje()});
+ save();alert(`${tipo==='saida'?'Saída':'Entrada'} registrada: ${qtd} peças (${baseGrade} × ${pares} pares).`);
+ document.getElementById('movRef').value='';document.getElementById('movPares').value=1;document.getElementById('movPecasFardo').value=50;document.querySelectorAll('.gradeMov').forEach(x=>x.value=0);calcularMov();
+}
 function estornar(id){const m=db.movimentos.find(x=>x.id===id);if(!m||m.ref==='ESTORNO')return;const c=db.cortes.find(x=>x.id===m.corteId);if(!c)return;if(!confirm(`Estornar ${m.tipo} de ${m.qtd} peças?`))return;db.movimentos.push({id:Date.now(),corteId:m.corteId,tipo:m.tipo==='saida'?'entrada':'saida',qtd:m.qtd,fardos:m.fardos||0,pecasFardo:m.pecasFardo||0,grade:m.grade||{},ref:'ESTORNO DA MOVIMENTAÇÃO #'+m.id,data:hoje()});save()}
 function renderHist(){const rows=[...db.movimentos].reverse().map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td><span class="badge ${m.tipo==='entrada'?'ok':'bad'}">${m.tipo.toUpperCase()}</span></td><td>${m.qtd}</td><td>${esc(Object.entries(m.grade||{}).map(([t,q])=>t+'='+q).join(' • ')||'—')}</td><td>${esc(m.ref||'—')}</td><td><button class="ghost small" onclick="estornar(${m.id})">ESTORNAR</button></td></tr>`:''}).join('');document.getElementById('hist').innerHTML=rows?`<div style="overflow:auto"><table><thead><tr><th>Data</th><th>Corte</th><th>Tipo</th><th>Peças</th><th>Grade</th><th>Referência</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">Nenhuma movimentação.</div>'}
 function renderDash(){document.getElementById('sCortes').textContent=db.cortes.length;document.getElementById('sPecas').textContent=db.cortes.reduce((a,c)=>a+estoqueCorte(c),0);document.getElementById('sFardos').textContent=db.cortes.reduce((a,c)=>a+c.fardos.length,0);document.getElementById('sMov').textContent=db.movimentos.length;const arr=[...db.movimentos].reverse().slice(0,8);document.getElementById('dashMov').innerHTML=arr.length?`<table><thead><tr><th>Data</th><th>Corte</th><th>Mov.</th><th>Peças</th></tr></thead><tbody>${arr.map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td>${m.tipo.toUpperCase()}</td><td>${m.qtd}</td></tr>`:''}).join('')}</tbody></table>`:'<div class="empty">Nenhuma movimentação ainda.</div>'}
