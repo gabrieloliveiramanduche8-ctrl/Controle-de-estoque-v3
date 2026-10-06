@@ -1,0 +1,12 @@
+{
+  "name": "controle-cortes-fardos",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Controle de cortes, fardos, entradas, saídas, pedidos, tipos de calça e grade.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
