@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Controle de Cortes e Fardos V3</title>
+<title>Controle de Cortes e Fardos V5</title>
 <style>
 :root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#68737d;--line:#e4e8ec;--primary:#111827;--accent:#2563eb;--ok:#15803d;--warn:#b45309;--danger:#b91c1c}
 *{box-sizing:border-box} body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
@@ -28,15 +28,19 @@ table{width:100%;border-collapse:collapse}th,td{padding:10px 7px;border-bottom:1
 h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 @media(max-width:700px){.grid,.grid3,.stats{grid-template-columns:1fr 1fr}.fardo{grid-template-columns:1fr 1fr}.fardo .remove{grid-column:auto}.stats .stat b{font-size:18px}nav{top:73px}}
 @media(max-width:430px){.grid,.grid3,.stats{grid-template-columns:1fr}.fardo{grid-template-columns:1fr 1fr}.fardo .full{grid-column:1/-1}}
+.progress{height:8px;background:#eef2f7;border-radius:99px;overflow:hidden}.progress>i{display:block;height:100%;background:var(--accent)}
 </style>
 </head>
 <body>
-<header><h1>CONTROLE DE CORTES E FARDOS V3</h1><p>Entrada • Estoque • Saída • Histórico</p></header>
+<header><h1>CONTROLE DE CORTES E FARDOS V5</h1><p>Estoque por tamanho • Fardos • Pedidos • Histórico</p></header>
 <nav>
 <button class="active" data-tab="dashboard">Resumo</button>
 <button data-tab="novo">Novo corte</button>
 <button data-tab="estoque">Estoque</button>
 <button data-tab="movimentos">Entradas e saídas</button>
+<button data-tab="pedidos">Pedidos</button>
+<button data-tab="fardosTab">Fardos</button>
+<button data-tab="backup">Backup</button>
 </nav>
 <main>
 <section id="dashboard" class="active-section">
@@ -108,161 +112,62 @@ h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 10px;font-size:15px}
 </div>
 <div class="card"><h3>Histórico completo</h3><div id="hist"></div></div>
 </section>
+
+<section id="pedidos">
+<div class="card"><h2>Pedidos</h2><input id="buscaPedido" placeholder="Pesquisar pedido..." oninput="renderPedidos()"></div>
+<div id="listaPedidos"></div>
+</section>
+
+<section id="fardosTab">
+<div class="card"><h2>Fardos</h2><p class="muted">Os fardos são controlados individualmente. Saídas por tamanho consomem primeiro os fardos daquele tamanho.</p><div id="listaFardos"></div></div>
+</section>
+
+<section id="backup">
+<div class="card"><h2>Backup</h2><p>Exporte os dados antes de trocar de aparelho ou fazer alterações importantes.</p><div class="actions"><button class="primary" onclick="exportarBackup()">BAIXAR BACKUP</button><button class="ghost" onclick="document.getElementById('importFile').click()">IMPORTAR BACKUP</button><input id="importFile" type="file" accept="application/json" style="display:none" onchange="importarBackup(event)"></div><p class="muted" style="margin-top:12px">O backup inclui cortes, fardos, pedidos e histórico.</p></div>
+</section>
 </main>
 
 <script>
-const KEY='controle_cortes_fardos_v1';
+const KEY='controle_cortes_fardos_v5';
+const TAMANHOS=[38,40,42,44,46,48];
 let db=JSON.parse(localStorage.getItem(KEY)||'{"cortes":[],"movimentos":[]}');
-
+if(!Array.isArray(db.cortes))db.cortes=[]; if(!Array.isArray(db.movimentos))db.movimentos=[];
 const hoje=()=>new Date().toISOString().slice(0,10);
-document.getElementById('data').value=hoje(); document.getElementById('movData').value=hoje();
-
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
- document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
- document.querySelectorAll('main section').forEach(x=>x.classList.remove('active-section'));
- b.classList.add('active'); document.getElementById(b.dataset.tab).classList.add('active-section');
- renderAll();
-});
-
+document.getElementById('data').value=hoje();document.getElementById('movData').value=hoje();
 function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll()}
-function addFardo(tamanho='',qtd=50){
- const d=document.createElement('div');d.className='fardo';
- d.innerHTML=`<div><label>Nº</label><input class="num" value="${document.querySelectorAll('#fardos .fardo').length+1}" readonly></div>
- <div><label>TAMANHO</label><select class="tam"><option value="">Selecionar</option>${[38,40,42,44,46,48].map(x=>`<option ${x==tamanho?'selected':''}>${x}</option>`).join('')}</select></div>
- <div><label>PEÇAS</label><input class="qtd" type="number" min="0" value="${qtd}"></div>
- <div><label>STATUS</label><span class="badge ok status">OK</span></div>
- <button class="danger remove" onclick="this.parentElement.remove();renum()">×</button>`;
- document.getElementById('fardos').appendChild(d);
-}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('main section').forEach(x=>x.classList.remove('active-section'));b.classList.add('active');document.getElementById(b.dataset.tab).classList.add('active-section');renderAll()});
+function esc(s){return String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]))}
+function showTab(id){const b=document.querySelector(`nav button[data-tab="${id}"]`);if(b)b.click()}
+function addFardo(tamanho='',qtd=50){const d=document.createElement('div');d.className='fardo';d.innerHTML=`<div><label>Nº</label><input class="num" value="${document.querySelectorAll('#fardos .fardo').length+1}" readonly></div><div><label>TAMANHO</label><select class="tam"><option value="">Selecionar</option>${TAMANHOS.map(x=>`<option ${String(x)==String(tamanho)?'selected':''}>${x}</option>`).join('')}</select></div><div><label>PEÇAS</label><input class="qtd" type="number" min="1" value="${qtd}"></div><div><label>STATUS</label><span class="badge ok status">CHEIO</span></div><button class="danger remove" onclick="this.parentElement.remove();renum()">×</button>`;document.getElementById('fardos').appendChild(d)}
 function renum(){document.querySelectorAll('#fardos .num').forEach((x,i)=>x.value=i+1)}
 addFardo();
-
-function adicionarFardosRapido(){
- const tam=document.getElementById('novoTam').value;
- const qtd=Number(document.getElementById('novoQtdFardo').value)||0;
- const n=Math.max(1,Number(document.getElementById('novoQtdFardos').value)||1);
- if(!tam){alert('Selecione o tamanho do fardo.');return}
- if(qtd<=0){alert('Informe a quantidade de peças por fardo.');return}
- for(let i=0;i<n;i++) addFardo(tam,qtd);
-}
-function salvarCorte(){
- const nome=document.getElementById('nome').value.trim();
- const total=Number(document.getElementById('total').value);
- if(!nome||!total){alert('Informe o nome do corte e o total de peças.');return}
- const f=[...document.querySelectorAll('#fardos .fardo')].map((el,i)=>({
-   id:i+1,tamanho:el.querySelector('.tam').value||'N/I',pecas:Number(el.querySelector('.qtd').value)||0
- }));
- const id=Date.now();
- db.cortes.push({id,nome,tipoCalca:document.getElementById('tipoCalca').value.trim(),pedido:document.getElementById('pedido').value.trim(),total,obs:document.getElementById('obs').value,data:document.getElementById('data').value||hoje(),fardos:f,ajuste:0});
- db.movimentos.push({id:Date.now()+1,corteId:id,tipo:'entrada',qtd:total,fardos:f.length,ref:'ENTRADA DO CORTE',data:document.getElementById('data').value||hoje()});
- save(); alert('Corte salvo com sucesso!'); limparNovo(); showTab('estoque');
-}
-function limparNovo(){document.getElementById('nome').value='';document.getElementById('tipoCalca').value='';document.getElementById('pedido').value='';document.getElementById('total').value='';document.getElementById('obs').value='';document.getElementById('fardos').innerHTML='';addFardo()}
-function estoqueCorte(c){
- return c.total + db.movimentos.filter(m=>m.corteId===c.id&&m.tipo==='entrada'&&m.ref!=='ENTRADA DO CORTE').reduce((a,m)=>a+m.qtd,0)
- - db.movimentos.filter(m=>m.corteId===c.id&&m.tipo==='saida').reduce((a,m)=>a+m.qtd,0);
-}
-function renderEstoque(){
- const q=(document.getElementById('busca').value||'').toLowerCase();
- const arr=db.cortes.filter(c=>c.nome.toLowerCase().includes(q));
- document.getElementById('listaEstoque').innerHTML=arr.length?arr.map(c=>{
-   const est=estoqueCorte(c), fTotal=c.fardos.reduce((a,f)=>a+f.pecas,0);
-   const por={};c.fardos.forEach(f=>por[f.tamanho]=(por[f.tamanho]||0)+f.pecas);
-   const linhas=Object.entries(por).map(([t,p])=>`<span class="badge ok" style="margin:2px">Tam ${t}: ${p} pcs</span>`).join('');
-   return `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h2>${esc(c.nome)}</h2><span class="muted">Tipo: ${esc(c.tipoCalca||"N/I")} • Pedido: ${esc(c.pedido||"SEM PEDIDO")} • Entrada: ${c.data}</span></div><span class="badge ${est>=0?'ok':'bad'}">${est} PEÇAS EM ESTOQUE</span></div>
-   <div class="stats" style="margin-top:12px"><div class="stat"><span class="muted">TOTAL ORIGINAL</span><b>${c.total}</b></div><div class="stat"><span class="muted">FARDOS</span><b>${c.fardos.length}</b></div><div class="stat"><span class="muted">PEÇAS NOS FARDOS</span><b>${fTotal}</b></div><div class="stat"><span class="muted">SAÍDAS</span><b>${c.total-est+db.movimentos.filter(m=>m.corteId===c.id&&m.tipo==='entrada'&&m.ref!=='ENTRADA DO CORTE').reduce((a,m)=>a+m.qtd,0)}</b></div></div>
-   <div style="margin-top:10px">${linhas||'<span class="muted">Nenhuma grade informada.</span>'}</div>
-   <div class="actions"><button class="ghost small" onclick="editarDados(${c.id})">EDITAR PEDIDO/TIPO</button><button class="ghost small" onclick="editarFardos(${c.id})">EDITAR FARDOS</button><button class="danger small" onclick="excluirCorte(${c.id})">EXCLUIR CORTE</button></div></div>`;
- }).join(''):'<div class="card empty">Nenhum corte cadastrado.</div>';
-}
-function editarDados(id){
- const c=db.cortes.find(x=>x.id===id);if(!c)return;
- const pedido=prompt('NOME DO PEDIDO:',c.pedido||'');
- if(pedido===null)return;
- const tipo=prompt('TIPO DE CALÇA:',c.tipoCalca||'');
- if(tipo===null)return;
- c.pedido=pedido.trim();c.tipoCalca=tipo.trim();save();
-}
-function editarFardos(id){
- const c=db.cortes.find(x=>x.id===id);if(!c)return;
- const lista=c.fardos.map(f=>`Tamanho ${f.tamanho}: ${f.pecas} peças`).join('\\n');
- const novo=prompt('Edite cada fardo no formato TAMANHO=PEÇAS, um por linha.\\n\\nExemplo:\\n38=50\\n38=48\\n40=50',lista.replaceAll(': ','=').replaceAll(' peças',''));
- if(novo===null)return;
- const f=novo.split('\\n').filter(Boolean).map((x,i)=>{let [t,q]=x.split('=');return{id:i+1,tamanho:(t||'N/I').trim(),pecas:Number(q)||0}});
- c.fardos=f;save();
-}
-function excluirCorte(id){if(confirm('Excluir este corte e todo o histórico dele?')){db.cortes=db.cortes.filter(c=>c.id!==id);db.movimentos=db.movimentos.filter(m=>m.corteId!==id);save()}}
-function renderSelect(){
- const s=document.getElementById('movCorte');s.innerHTML=db.cortes.length?db.cortes.map(c=>`<option value="${c.id}">${esc(c.nome)} — ${estoqueCorte(c)} pcs</option>`).join(''):'<option>Nenhum corte cadastrado</option>';
-}
-function calcularMov(){
- const f=Math.max(0,Number(document.getElementById('movFardos').value)||0);
- const p=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0);
- const total=f*p;
- document.getElementById('movQtd').value=total||'';
- const grade=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0);
- document.getElementById('gradeResumo').textContent=`GRADE: ${grade} PEÇAS • FARDOS: ${f} × ${p} = ${total} PEÇAS`;
-}
-function calcularGrade(){
- const grade=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0);
- const f=Math.max(0,Number(document.getElementById('movFardos').value)||0);
- const p=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0);
- const total=f*p;
- document.getElementById('gradeResumo').textContent=`GRADE: ${grade} PEÇAS • FARDOS: ${f} × ${p} = ${total} PEÇAS`;
-}
-function lerGradeMov(){
- const grade={};
- document.querySelectorAll('.gradeMov').forEach(x=>{
-   const q=Number(x.value)||0;
-   if(q>0) grade[x.dataset.tam]=q;
- });
- return grade;
-}
-function registrarMov(){
- const corteId=Number(document.getElementById('movCorte').value);
- const tipo=document.getElementById('movTipo').value;
- const fardos=Math.max(0,Number(document.getElementById('movFardos').value)||0);
- const pecasFardo=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0);
- const qtd=fardos*pecasFardo;
- const grade=lerGradeMov();
- const gradeTotal=Object.values(grade).reduce((a,b)=>a+b,0);
- const c=db.cortes.find(x=>x.id===corteId);
- if(!c||qtd<=0){alert('Selecione um corte e informe a quantidade de fardos e peças por fardo.');return}
- if(gradeTotal>0 && gradeTotal!==qtd){
-   if(!confirm(`A GRADE soma ${gradeTotal} peças, mas os fardos somam ${qtd} peças. Deseja registrar mesmo assim?`)) return;
- }
- if(tipo==='saida'&&qtd>estoqueCorte(c)){alert('A saída não pode ser maior que o estoque disponível.');return}
- db.movimentos.push({
-   id:Date.now(),corteId,tipo,qtd,fardos,pecasFardo,grade,
-   ref:document.getElementById('movRef').value||'',
-   data:document.getElementById('movData').value||hoje()
- });
- save();
- alert(`Movimentação registrada: ${qtd} peças (${fardos} fardo(s) × ${pecasFardo}).`);
- document.getElementById('movQtd').value='';
- document.getElementById('movRef').value='';
- document.getElementById('movFardos').value='1';
- document.getElementById('movPecasFardo').value='50';
- document.querySelectorAll('.gradeMov').forEach(x=>x.value='0');
- calcularMov();
-}
-function renderHist(){
- const rows=[...db.movimentos].reverse().map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td><span class="badge ${m.tipo==='entrada'?'ok':'bad'}">${m.tipo.toUpperCase()}</span></td><td>${m.qtd}</td><td>${m.fardos||0} × ${m.pecasFardo||'—'}</td><td>${m.grade?esc(Object.entries(m.grade).map(([t,q])=>t+'='+q).join(' • ')):'—'}</td><td>${esc(m.ref||'—')}</td></tr>`:''}).join('');
- document.getElementById('hist').innerHTML=rows?`<div style="overflow:auto"><table><thead><tr><th>Data</th><th>Corte</th><th>Tipo</th><th>Peças</th><th>Fardos</th><th>Grade</th><th>Referência</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">Nenhuma movimentação registrada.</div>';
-}
-function renderDash(){
- document.getElementById('sCortes').textContent=db.cortes.length;
- document.getElementById('sPecas').textContent=db.cortes.reduce((a,c)=>a+estoqueCorte(c),0);
- document.getElementById('sFardos').textContent=db.cortes.reduce((a,c)=>a+c.fardos.length,0);
- document.getElementById('sMov').textContent=db.movimentos.length;
- const arr=[...db.movimentos].reverse().slice(0,8);
- document.getElementById('dashMov').innerHTML=arr.length?`<table><thead><tr><th>Data</th><th>Corte</th><th>Mov.</th><th>Peças</th><th>Fardos</th></tr></thead><tbody>${arr.map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td>${m.tipo.toUpperCase()}</td><td>${m.qtd}</td><td>${m.fardos||0} × ${m.pecasFardo||'—'}</td></tr>`:''}).join('')}</tbody></table>`:'<div class="empty">Nenhuma movimentação ainda.</div>';
-}
-function esc(s){return String(s).replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]))}
-function showTab(id){document.querySelector(`nav button[data-tab="${id}"]`).click()}
-function renderAll(){renderDash();renderEstoque();renderSelect();renderHist()}
-renderAll();
-calcularMov();
+function adicionarFardosRapido(){const tam=document.getElementById('novoTam').value,qtd=Number(document.getElementById('novoQtdFardo').value)||0,n=Math.max(1,Number(document.getElementById('novoQtdFardos').value)||1);if(!tam)return alert('Selecione o tamanho.');if(qtd<=0)return alert('Informe as peças do fardo.');for(let i=0;i<n;i++)addFardo(tam,qtd)}
+function salvarCorte(){const nome=document.getElementById('nome').value.trim(),total=Number(document.getElementById('total').value);if(!nome||total<=0)return alert('Informe o nome e o total de peças.');const f=[...document.querySelectorAll('#fardos .fardo')].map((el,i)=>({id:i+1,tamanho:el.querySelector('.tam').value,pecas:Number(el.querySelector('.qtd').value)||0,original:Number(el.querySelector('.qtd').value)||0}));if(f.some(x=>!TAMANHOS.map(String).includes(x.tamanho)))return alert('Informe o tamanho de todos os fardos.');const soma=f.reduce((a,x)=>a+x.pecas,0);if(soma!==total)return alert(`Os fardos somam ${soma} peças, mas o corte tem ${total}. Ajuste antes de salvar.`);const id=Date.now();const pedido=document.getElementById('pedido').value.trim();db.cortes.push({id,nome,tipoCalca:document.getElementById('tipoCalca').value.trim(),pedido,total,obs:document.getElementById('obs').value.trim(),data:document.getElementById('data').value||hoje(),fardos:f});db.movimentos.push({id:id+1,corteId:id,tipo:'entrada',qtd:total,fardos:f.length,ref:'ENTRADA DO CORTE',data:document.getElementById('data').value||hoje(),grade:gradeDosFardos(f)});save();alert('Corte salvo com sucesso!');limparNovo();showTab('estoque')}
+function gradeDosFardos(f){const g={};f.forEach(x=>g[x.tamanho]=(g[x.tamanho]||0)+x.pecas);return g}
+function limparNovo(){['nome','tipoCalca','pedido','total','obs'].forEach(id=>document.getElementById(id).value='');document.getElementById('fardos').innerHTML='';addFardo()}
+function saidasDoCorte(c){return db.movimentos.filter(m=>m.corteId===c.id&&m.tipo==='saida')}
+function entradasDoCorte(c){return db.movimentos.filter(m=>m.corteId===c.id&&m.tipo==='entrada'&&m.ref!=='ENTRADA DO CORTE')}
+function estoqueCorte(c){return c.total+entradasDoCorte(c).reduce((a,m)=>a+m.qtd,0)-saidasDoCorte(c).reduce((a,m)=>a+m.qtd,0)}
+function estoqueGrade(c,t){const base=(c.fardos||[]).filter(f=>String(f.tamanho)===String(t)).reduce((a,f)=>a+(Number(f.pecas)||0),0);const ent=entradasDoCorte(c).reduce((a,m)=>a+Number(m.grade?.[t]||0),0);const sai=saidasDoCorte(c).reduce((a,m)=>a+Number(m.grade?.[t]||0),0);return Math.max(0,base+ent-sai)}
+function consumoFardos(c,t){let restante=saidasDoCorte(c).reduce((a,m)=>a+Number(m.grade?.[t]||0),0);return (c.fardos||[]).filter(f=>String(f.tamanho)===String(t)).map(f=>{const usado=Math.min(f.original??f.pecas,restante);restante-=usado;return {...f,restante:Math.max(0,(f.original??f.pecas)-usado)}})}
+function renderEstoque(){const q=(document.getElementById('busca').value||'').toLowerCase();const arr=db.cortes.filter(c=>(c.nome+' '+(c.tipoCalca||'')+' '+(c.pedido||'')).toLowerCase().includes(q));document.getElementById('listaEstoque').innerHTML=arr.length?arr.map(c=>{const est=estoqueCorte(c);const grade=TAMANHOS.map(t=>`<span class="badge ${estoqueGrade(c,t)>0?'ok':'bad'}" style="margin:2px">${t}: ${estoqueGrade(c,t)} pcs</span>`).join('');return `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h2>${esc(c.nome)}</h2><span class="muted">${esc(c.tipoCalca||'SEM TIPO')} • Pedido: ${esc(c.pedido||'SEM PEDIDO')} • ${c.data}</span></div><span class="badge ${est>0?'ok':est===0?'warn':'bad'}">${est} PEÇAS</span></div><div class="stats" style="margin-top:12px"><div class="stat"><span class="muted">TOTAL ORIGINAL</span><b>${c.total}</b></div><div class="stat"><span class="muted">FARDOS</span><b>${c.fardos.length}</b></div><div class="stat"><span class="muted">DISPONÍVEL</span><b>${est}</b></div><div class="stat"><span class="muted">SAÍDAS</span><b>${saidasDoCorte(c).reduce((a,m)=>a+m.qtd,0)}</b></div></div><div style="margin-top:10px"><b style="font-size:12px">ESTOQUE POR TAMANHO</b><div style="margin-top:6px">${grade}</div></div><div class="actions"><button class="ghost small" onclick="editarDados(${c.id})">EDITAR PEDIDO/TIPO</button><button class="ghost small" onclick="editarFardos(${c.id})">EDITAR FARDOS</button><button class="danger small" onclick="excluirCorte(${c.id})">EXCLUIR CORTE</button></div></div>`}).join(''):'<div class="card empty">Nenhum corte cadastrado.</div>'}
+function editarDados(id){const c=db.cortes.find(x=>x.id===id);if(!c)return;const p=prompt('NOME DO PEDIDO:',c.pedido||'');if(p===null)return;const t=prompt('TIPO DE CALÇA:',c.tipoCalca||'');if(t===null)return;c.pedido=p.trim();c.tipoCalca=t.trim();save()}
+function editarFardos(id){const c=db.cortes.find(x=>x.id===id);if(!c)return;const atual=c.fardos.map(f=>`${f.tamanho}=${f.pecas}`).join('\n');const novo=prompt('Um fardo por linha no formato TAMANHO=PEÇAS. Ex.:\n38=50\n38=47\n40=50',atual);if(novo===null)return;const f=novo.split('\n').filter(Boolean).map((x,i)=>{const [t,q]=x.split('=');return{id:i+1,tamanho:(t||'').trim(),pecas:Number(q)||0,original:Number(q)||0}});if(f.some(x=>!TAMANHOS.map(String).includes(x.tamanho)||x.pecas<=0))return alert('Formato inválido.');if(f.reduce((a,x)=>a+x.pecas,0)!==c.total)return alert(`Os fardos precisam somar exatamente ${c.total} peças.`);c.fardos=f;save()}
+function excluirCorte(id){if(confirm('Excluir este corte e todo o histórico?')){db.cortes=db.cortes.filter(c=>c.id!==id);db.movimentos=db.movimentos.filter(m=>m.corteId!==id);save()}}
+function renderSelect(){const s=document.getElementById('movCorte');s.innerHTML=db.cortes.length?db.cortes.map(c=>`<option value="${c.id}">${esc(c.nome)} — ${estoqueCorte(c)} pcs</option>`).join(''):'<option value="">Nenhum corte cadastrado</option>'}
+function calcularMov(){const f=Math.max(0,Number(document.getElementById('movFardos').value)||0),p=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0),total=f*p;document.getElementById('movQtd').value=total||'';calcularGrade()}
+function calcularGrade(){const grade=[...document.querySelectorAll('.gradeMov')].reduce((a,x)=>a+(Number(x.value)||0),0),f=Number(document.getElementById('movFardos').value)||0,p=Number(document.getElementById('movPecasFardo').value)||0,total=f*p;document.getElementById('gradeResumo').textContent=`GRADE: ${grade} PEÇAS • FARDOS: ${f} × ${p} = ${total} PEÇAS`}
+function lerGradeMov(){const g={};document.querySelectorAll('.gradeMov').forEach(x=>{const q=Number(x.value)||0;if(q>0)g[x.dataset.tam]=q});return g}
+function registrarMov(){const corteId=Number(document.getElementById('movCorte').value),tipo=document.getElementById('movTipo').value,fardos=Math.max(0,Number(document.getElementById('movFardos').value)||0),pf=Math.max(0,Number(document.getElementById('movPecasFardo').value)||0),qtd=fardos*pf,grade=lerGradeMov(),gt=Object.values(grade).reduce((a,b)=>a+b,0),c=db.cortes.find(x=>x.id===corteId);if(!c||qtd<=0)return alert('Informe corte, fardos e peças por fardo.');if(gt!==qtd)return alert(`A grade soma ${gt}, mas a movimentação soma ${qtd}. Ajuste a grade.`);if(tipo==='saida'){if(qtd>estoqueCorte(c))return alert(`SAÍDA BLOQUEADA. Estoque total: ${estoqueCorte(c)} peças.`);for(const [t,v] of Object.entries(grade)){const disp=estoqueGrade(c,t);if(v>disp)return alert(`SAÍDA BLOQUEADA: tamanho ${t} tem ${disp} peças disponíveis e você tentou retirar ${v}.`)}}db.movimentos.push({id:Date.now(),corteId,tipo,qtd,fardos,pecasFardo:pf,grade,ref:document.getElementById('movRef').value.trim(),data:document.getElementById('movData').value||hoje()});save();alert(`${tipo==='saida'?'Saída':'Entrada'} registrada: ${qtd} peças.`);document.getElementById('movRef').value='';document.getElementById('movFardos').value=1;document.getElementById('movPecasFardo').value=50;document.querySelectorAll('.gradeMov').forEach(x=>x.value=0);calcularMov()}
+function estornar(id){const m=db.movimentos.find(x=>x.id===id);if(!m||m.ref==='ESTORNO')return;const c=db.cortes.find(x=>x.id===m.corteId);if(!c)return;if(!confirm(`Estornar ${m.tipo} de ${m.qtd} peças?`))return;db.movimentos.push({id:Date.now(),corteId:m.corteId,tipo:m.tipo==='saida'?'entrada':'saida',qtd:m.qtd,fardos:m.fardos||0,pecasFardo:m.pecasFardo||0,grade:m.grade||{},ref:'ESTORNO DA MOVIMENTAÇÃO #'+m.id,data:hoje()});save()}
+function renderHist(){const rows=[...db.movimentos].reverse().map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td><span class="badge ${m.tipo==='entrada'?'ok':'bad'}">${m.tipo.toUpperCase()}</span></td><td>${m.qtd}</td><td>${esc(Object.entries(m.grade||{}).map(([t,q])=>t+'='+q).join(' • ')||'—')}</td><td>${esc(m.ref||'—')}</td><td><button class="ghost small" onclick="estornar(${m.id})">ESTORNAR</button></td></tr>`:''}).join('');document.getElementById('hist').innerHTML=rows?`<div style="overflow:auto"><table><thead><tr><th>Data</th><th>Corte</th><th>Tipo</th><th>Peças</th><th>Grade</th><th>Referência</th><th>Ação</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">Nenhuma movimentação.</div>'}
+function renderDash(){document.getElementById('sCortes').textContent=db.cortes.length;document.getElementById('sPecas').textContent=db.cortes.reduce((a,c)=>a+estoqueCorte(c),0);document.getElementById('sFardos').textContent=db.cortes.reduce((a,c)=>a+c.fardos.length,0);document.getElementById('sMov').textContent=db.movimentos.length;const arr=[...db.movimentos].reverse().slice(0,8);document.getElementById('dashMov').innerHTML=arr.length?`<table><thead><tr><th>Data</th><th>Corte</th><th>Mov.</th><th>Peças</th></tr></thead><tbody>${arr.map(m=>{const c=db.cortes.find(x=>x.id===m.corteId);return c?`<tr><td>${m.data}</td><td>${esc(c.nome)}</td><td>${m.tipo.toUpperCase()}</td><td>${m.qtd}</td></tr>`:''}).join('')}</tbody></table>`:'<div class="empty">Nenhuma movimentação ainda.</div>'}
+function renderPedidos(){const q=(document.getElementById('buscaPedido').value||'').toLowerCase();const grupos={};db.cortes.forEach(c=>{const p=c.pedido||'SEM PEDIDO';if(!grupos[p])grupos[p]=[];grupos[p].push(c)});const keys=Object.keys(grupos).filter(p=>p.toLowerCase().includes(q));document.getElementById('listaPedidos').innerHTML=keys.length?keys.map(p=>{const cs=grupos[p],total=cs.reduce((a,c)=>a+c.total,0),est=cs.reduce((a,c)=>a+estoqueCorte(c),0);return `<div class="card"><h2>${esc(p)}</h2><div class="stats"><div class="stat"><span class="muted">CORTES</span><b>${cs.length}</b></div><div class="stat"><span class="muted">TOTAL</span><b>${total}</b></div><div class="stat"><span class="muted">DISPONÍVEL</span><b>${est}</b></div><div class="stat"><span class="muted">SEPARADO/SAÍDA</span><b>${total-est}</b></div></div><div style="margin-top:10px">${cs.map(c=>`<div style="padding:9px 0;border-bottom:1px solid var(--line)"><b>${esc(c.nome)}</b> — ${esc(c.tipoCalca||'SEM TIPO')} — ${estoqueCorte(c)} disponíveis</div>`).join('')}</div></div>`}).join(''):'<div class="card empty">Nenhum pedido encontrado.</div>'}
+function renderFardos(){let html='';db.cortes.forEach(c=>{c.fardos.forEach(f=>{const usado=(f.original??f.pecas)-consumoFardos(c,f.tamanho).find(x=>x.id===f.id)?.restante;const rem=Math.max(0,Number.isFinite(usado)?(f.original??f.pecas)-usado:(f.pecas||0));const status=rem===0?'VAZIO':rem<(f.original??f.pecas)?'PARCIAL':'CHEIO';html+=`<tr><td>${esc(c.nome)}</td><td>${f.id}</td><td>${f.tamanho}</td><td>${f.original??f.pecas}</td><td>${rem}</td><td><span class="badge ${status==='CHEIO'?'ok':status==='PARCIAL'?'warn':'bad'}">${status}</span></td></tr>`})});document.getElementById('listaFardos').innerHTML=html?`<div style="overflow:auto"><table><thead><tr><th>Corte</th><th>Fardo</th><th>Tamanho</th><th>Original</th><th>Disponível</th><th>Status</th></tr></thead><tbody>${html}</tbody></table></div>`:'<div class="empty">Nenhum fardo cadastrado.</div>'}
+function exportarBackup(){const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='backup-controle-cortes-'+hoje()+'.json';a.click();URL.revokeObjectURL(a.href)}
+function importarBackup(e){const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!Array.isArray(x.cortes)||!Array.isArray(x.movimentos))throw Error();if(confirm('Substituir os dados atuais pelo backup?')){db=x;save();alert('Backup importado com sucesso.')}}catch{alert('Arquivo de backup inválido.')}e.target.value=''};r.readAsText(file)}
+function renderAll(){renderDash();renderEstoque();renderSelect();renderHist();renderPedidos();renderFardos()}
+renderAll();calcularMov();
 </script>
 </body>
 </html>

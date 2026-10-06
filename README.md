@@ -1,16 +1,20 @@
-# CONTROLE DE CORTES E FARDOS V3
+# Controle de Cortes e Fardos V5
 
-Projeto pronto para publicar no Render como **Web Service**.
+Projeto pronto para Render como Web Service.
 
-## Configuração no Render
+## Render
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Root Directory: vazio
 
-- **Environment:** Node
-- **Root Directory:** deixe vazio
-- **Build Command:** `npm install`
-- **Start Command:** `npm start`
+## Recursos V5
+- Estoque por tamanho (38, 40, 42, 44, 46, 48)
+- Bloqueio de saída acima do estoque do tamanho
+- Fardos individuais com quantidade própria
+- Status de fardos: cheio, parcial e vazio
+- Pedidos agrupados
+- Histórico com estorno
+- Backup e restauração em JSON
+- Controle de entradas e saídas
 
-O servidor usa automaticamente a variável `PORT` fornecida pelo Render.
-
-## Importante
-
-A versão atual usa `localStorage` no navegador para guardar os dados. Isso significa que os dados ficam salvos no dispositivo/navegador usado e não são compartilhados automaticamente entre celulares ou computadores. Para banco de dados compartilhado será necessário adicionar um backend/banco de dados.
+Os dados desta versão são salvos no navegador (localStorage). O Render hospeda o site, mas não transforma o localStorage em banco compartilhado.
