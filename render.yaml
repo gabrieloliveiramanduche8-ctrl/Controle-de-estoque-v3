@@ -1,18 +1,7 @@
 services:
   - type: web
-    name: controle-cortes-fardos-v6
+    name: estoque-de-tecido-plus-v40
     runtime: node
-    plan: free
     buildCommand: npm install
     startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: controle-cortes-fardos-db
-          property: connectionString
-
-databases:
-  - name: controle-cortes-fardos-db
-    plan: free
+    healthCheckPath: /api/health

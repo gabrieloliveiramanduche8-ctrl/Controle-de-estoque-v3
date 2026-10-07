@@ -1,9 +1,10 @@
 {
-  "name":"controle-cortes-fardos-v6",
-  "version":"6.0.0",
-  "private":true,
-  "description":"Controle de cortes, fardos, estoque por tamanho, pedidos e movimentações com PostgreSQL opcional.",
-  "scripts":{"start":"node server.js"},
-  "dependencies":{"pg":"^8.16.3"},
-  "engines":{"node":">=18"}
+  "name": "estoque-de-tecido-plus-render",
+  "version": "40.0.0",
+  "private": true,
+  "description": "ESTOQUE DE TECIDO PLUS+ - versão limpa e pronta para Render",
+  "main": "server.js",
+  "scripts": {"start":"node server.js"},
+  "engines": {"node": ">=18"},
+  "dependencies": {"express":"^4.21.2"}
 }
